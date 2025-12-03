@@ -18,10 +18,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install uv
-          uv pip install --system pixi
-          pixi migrate
-          pixi install
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
 
       - name: Run tests
-        run: pixi run pytest
+        run: pytest
