@@ -15,7 +15,7 @@ from rich.console import Console
 import arrow
 from cyclopts import App
 
-from .logging_utils import LogStorage, StructuredLogEntry
+from .log import LogStorage, StructuredLogEntry
 
 app = App(name="taggin")
 console = Console()

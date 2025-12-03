@@ -3,7 +3,7 @@
 ## Training Pipeline
 
 ```python
-from taggin.logging_utils import setup_logger, set_visible_tags, get_log_storage
+from taggin import setup_logger, set_visible_tags, get_log_storage
 
 log = setup_logger()
 set_visible_tags(["TRAIN.*", "DATA.*"])
@@ -23,7 +23,7 @@ storage.save_text("logs/train.txt")
 ### Tag visibility quick check
 
 ```python
-from taggin.logging_utils import setup_logger, set_visible_tags
+from taggin import setup_logger, set_visible_tags
 
 log = setup_logger()
 
@@ -41,7 +41,7 @@ captured in the log file and structured storage.
 ## Rate Limiting and Levels
 
 ```python
-from taggin.logging_utils import setup_logger, set_tag_rate_limit, set_tag_level, set_tag_style
+from taggin import setup_logger, set_tag_rate_limit, set_tag_level, set_tag_style
 
 log = setup_logger(enable_color=True)
 set_tag_rate_limit("METRIC.BATCH", 0.5)      # throttle noisy metrics

@@ -1,6 +1,6 @@
 # API Reference
 
-## Module `taggin.logging_utils`
+## Module `taggin.log`
 
 ### `setup_logger(log_dir="logs", log_name="run.log", console_level="INFO", file_level="DEBUG", enable_color=False)`
 Creates a root logger with file + console handlers, installs the tagged logger

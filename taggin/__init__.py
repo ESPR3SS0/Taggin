@@ -1,6 +1,6 @@
 """Taggin package: tagged logging helpers and CLI tools."""
 
-from .logging_utils import (
+from .log import (
     FileTagAwareFormatter,
     LogStorage,
     ProgressSafeStreamHandler,

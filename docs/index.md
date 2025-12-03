@@ -21,7 +21,7 @@ for lightweight analytics.
 
 ```python
 from datetime import datetime
-from taggin.logging_utils import (
+from taggin import (
     setup_logger,
     set_visible_tags,
     get_log_storage,

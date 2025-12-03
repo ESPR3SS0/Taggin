@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from taggin.logging_utils import (
+from taggin import (
     ConsoleTagFirstFormatter,
     LogStorage,
     StructuredLogEntry,

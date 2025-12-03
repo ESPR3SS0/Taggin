@@ -25,7 +25,7 @@ uses `rich`, and saving/reading Parquet requires `pandas` plus a backend such as
 
 ```python
 from datetime import datetime
-from taggin.logging_utils import (
+from taggin import (
     setup_logger,
     get_log_storage,
     set_visible_tags,
