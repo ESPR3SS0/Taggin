@@ -35,6 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=9.0.1,<10",
+  "mkdocs>=1.6.0,<2",
 ]
 
 [project.scripts]
