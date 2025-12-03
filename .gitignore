@@ -31,3 +31,4 @@ env/
 # Local artifacts
 logs/
 tmp/
+site/
