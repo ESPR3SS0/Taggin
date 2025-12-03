@@ -105,7 +105,7 @@
 
 <h1 id="examples">Examples</h1>
 <h2 id="training-pipeline">Training Pipeline</h2>
-<pre><code class="language-python">from taggin.logging_utils import setup_logger, set_visible_tags, get_log_storage
+<pre><code class="language-python">from taggin import setup_logger, set_visible_tags, get_log_storage
 
 log = setup_logger()
 set_visible_tags([&quot;TRAIN.*&quot;, &quot;DATA.*&quot;])
@@ -122,7 +122,7 @@ storage = get_log_storage()
 storage.save_text(&quot;logs/train.txt&quot;)
 </code></pre>
 <h3 id="tag-visibility-quick-check">Tag visibility quick check</h3>
-<pre><code class="language-python">from taggin.logging_utils import setup_logger, set_visible_tags
+<pre><code class="language-python">from taggin import setup_logger, set_visible_tags
 
 log = setup_logger()
 
@@ -136,7 +136,7 @@ log.TRAIN.START(&quot;visible&quot;)
 the second emits <code>[TRAIN.START] visible</code> to stdout; both records are still
 captured in the log file and structured storage.</p>
 <h2 id="rate-limiting-and-levels">Rate Limiting and Levels</h2>
-<pre><code class="language-python">from taggin.logging_utils import setup_logger, set_tag_rate_limit, set_tag_level, set_tag_style
+<pre><code class="language-python">from taggin import setup_logger, set_tag_rate_limit, set_tag_level, set_tag_style
 
 log = setup_logger(enable_color=True)
 set_tag_rate_limit(&quot;METRIC.BATCH&quot;, 0.5)      # throttle noisy metrics
