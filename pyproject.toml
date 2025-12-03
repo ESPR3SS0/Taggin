@@ -1,0 +1,44 @@
+#[build-system]
+#requires = ["setuptools>=64", "wheel"]
+#build-backend = "setuptools.build_meta"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "taggin"
+version = "0.1.0"
+description = "Taggin logging with dynamic tags, structured storage, and CLI search."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  {name = "ESPR3SS0", email = "98864173+ESPR3SS0@users.noreply.github.com"}
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "arrow>=1.4.0,<2",
+  "cyclopts>=4.2.4,<5",
+  "pandas>=2.3.3,<3",
+  "rich>=13.9.2,<14",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0.1,<10",
+]
+
+[project.scripts]
+taggin = "taggin.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["taggin*"]

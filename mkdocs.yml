@@ -1,0 +1,12 @@
+site_name: Taggin
+site_description: Tagged logging with structured storage and CLI search tools.
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Examples: examples.md
+  - API Reference: api.md
+repo_url: https://github.com/ESPR3SS0/Taggin
+watch:
+  - taggin
+  - README.md
