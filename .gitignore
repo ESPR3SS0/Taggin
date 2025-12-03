@@ -1,0 +1,33 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# Python cache / build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+coverage.xml
+htmlcov/
+
+# Packaging outputs
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / tooling
+.DS_Store
+.idea/
+.vscode/
+
+# Local artifacts
+logs/
+tmp/
