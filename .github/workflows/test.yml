@@ -20,6 +20,7 @@ jobs:
         run: |
           pip install uv
           uv pip install --system pixi
+          pixi migrate
           pixi install
 
       - name: Run tests
