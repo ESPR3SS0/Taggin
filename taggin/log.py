@@ -418,6 +418,8 @@ class LogStorage:
         scored.sort(key=lambda item: item[0], reverse=True)
         matches = [entry for _, entry in scored]
         if limit is not None:
+            if limit <= 0:
+                return []
             return matches[:limit]
         return matches
 

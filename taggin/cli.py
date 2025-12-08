@@ -51,7 +51,11 @@ def _load_from_text(path: Path) -> Iterable[StructuredLogEntry]:
             if len(parts) != 4:
                 continue
             ts_str, level, name, rest = parts
-            timestamp = arrow.get(ts_str).naive
+            try:
+                timestamp = arrow.get(ts_str).naive
+            except Exception:
+                # Skip malformed timestamps instead of aborting the entire load
+                continue
             tag: Optional[str] = None
             message = rest
             if rest.startswith("[") and "] " in rest:
@@ -99,7 +103,13 @@ def _load_storage(path: Path) -> LogStorage:
 def _parse_datetime(value: Optional[str]):
     if value is None:
         return None
-    return arrow.get(value).naive
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return arrow.get(value).naive
+    except Exception as exc:
+        raise ValueError(f"Invalid datetime value: {value}") from exc
 
 
 def _print_results(

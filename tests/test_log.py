@@ -93,6 +93,15 @@ def test_fuzzy_search_respects_threshold_and_limit():
     assert strict_hits[0].message == "alpha"
 
 
+def test_fuzzy_search_handles_non_positive_limits():
+    storage = LogStorage()
+    storage.add(make_entry(0, None, "alpha"))
+    storage.add(make_entry(1, None, "beta"))
+
+    assert storage.search_fuzzy("alpha", limit=0) == []
+    assert storage.search_fuzzy("alpha", limit=-1) == []
+
+
 def test_search_by_date_handles_unbounded_ranges():
     storage = LogStorage()
     storage.add(make_entry(0, None, "one"))
