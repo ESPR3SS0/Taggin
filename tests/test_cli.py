@@ -61,12 +61,47 @@ def test_cli_fuzzy_limit(structured_log, capsys):
 def test_cli_list_tags(structured_log, capsys):
     path, _ = structured_log
     tags(path)
-    out = capsys.readouterr().out.strip().splitlines()
-    assert out == ["IO.net", "TRAIN.END", "TRAIN.START"]
+    output = capsys.readouterr().out
+    assert "Tag" in output
+    assert "Count" in output
+    assert "TRAIN.START" in output
+    assert "TRAIN.END" in output
+    assert "IO.net" in output
 
     tags(path, json_output=True)
     json_data = json.loads(capsys.readouterr().out)
-    assert json_data == ["IO.net", "TRAIN.END", "TRAIN.START"]
+    assert json_data == [
+        {"tag": "IO.net", "count": 1},
+        {"tag": "TRAIN.END", "count": 1},
+        {"tag": "TRAIN.START", "count": 1},
+    ]
+
+
+def test_cli_tags_sorted_with_counts(tmp_path, capsys):
+    storage = LogStorage()
+    base = datetime(2025, 1, 1, 12, 0, 0)
+    entries = [
+        StructuredLogEntry(base, "INFO", "demo", "HOT", "first"),
+        StructuredLogEntry(base + timedelta(seconds=1), "INFO", "demo", "COLD", "second"),
+        StructuredLogEntry(base + timedelta(seconds=2), "INFO", "demo", "HOT", "third"),
+    ]
+    for entry in entries:
+        storage.add(entry)
+    path = Path(tmp_path) / "tags.log"
+    storage.save_text(path)
+
+    tags(path)
+    output = capsys.readouterr().out
+    assert output.index("HOT") < output.index("COLD")
+    assert "HOT" in output and "2" in output
+    assert "COLD" in output and "1" in output
+
+    tags(path, json_output=True)
+    json_data = json.loads(capsys.readouterr().out)
+    assert json_data == [
+        {"tag": "HOT", "count": 2},
+        {"tag": "COLD", "count": 1},
+    ]
 
 
 def test_cli_skips_malformed_text_lines(tmp_path, capsys):

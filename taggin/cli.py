@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Optional
 from rich.console import Console
+from rich.table import Table
 
 import arrow
 from cyclopts import App
@@ -185,13 +186,38 @@ def tags(path: Path, json_output: bool = False) -> None:
     """List all unique tags stored in the log file (text or parquet)."""
     storage = _load_storage(path)
     entries = storage.iter_records()
-    tag_set = sorted({entry.tag for entry in entries if entry.tag})
+    counts: dict[str, int] = {}
+    for entry in entries:
+        if entry.tag:
+            counts[entry.tag] = counts.get(entry.tag, 0) + 1
+
+    sorted_items = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+
     if json_output:
         import json
-        print(json.dumps(tag_set, indent=2))
-    else:
-        for tag in tag_set:
-            print(tag)
+
+        output = [
+            {
+                "tag": tag,
+                "count": count,
+            }
+            for tag, count in sorted_items
+        ]
+        print(json.dumps(output, indent=2))
+        return
+
+    if not sorted_items:
+        console.print("No tags found!")
+        return
+
+    table = Table(title="Tags", box=None)
+    table.add_column("Tag", style="cyan", no_wrap=True)
+    table.add_column("Count", justify="right", style="magenta")
+
+    for tag, count in sorted_items:
+        table.add_row(tag, str(count))
+
+    console.print(table)
 
 def main() -> None:
     app()
