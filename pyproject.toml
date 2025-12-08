@@ -36,10 +36,57 @@ dependencies = [
 dev = [
   "pytest>=9.0.1",
   "mkdocs>=1.6.0",
+  "mkdocs-material>=9.5.0",
+  "pre-commit>=3.8.0",
+  "ruff>=0.6.9",
+  "pyarrow>=12.0.0",
+  "build>=1.3.0",
+  "twine>=6.2.0",
 ]
 
 [project.scripts]
 taggin = "taggin.cli:main"
 
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+pytest = ">=9.0.2,<10"
+
+
+
 [tool.setuptools.packages.find]
 include = ["taggin*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "taggin/**/*.py"]
+
+
+
+[tool.ruff.lint]
+# Defaults: E/F (pycodestyle/pyflakes), I (isort), UP (pyupgrade),
+# B (bugbear), SIM (simplify), C4 (comprehensions), Q (quotes), PL (pylint-lite), RUF (extra rules), D (docstrings)
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "Q", "PL", "RUF", "D"]
+ignore = ["E501", "C901", "PLR0915", "PLR0912", "PLR0913", "PLR0917"]  # let the formatter manage line length
+extend-select = ["SIM108", "D103", "RUF005", "D101"]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004", "D"]  # magic numbers in tests are fine
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+
+[tool.ruff.lint.isort]
+known-first-party = ["taggin"]

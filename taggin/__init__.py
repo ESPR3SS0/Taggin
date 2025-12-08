@@ -1,12 +1,12 @@
 """Taggin package: tagged logging helpers and CLI tools."""
 
 from .log import (
+    ConsoleTagFirstFormatter,
     FileTagAwareFormatter,
     LogStorage,
     ProgressSafeStreamHandler,
     StructuredLogEntry,
     TaggedLogger,
-    ConsoleTagFirstFormatter,
     get_log_storage,
     set_tag_level,
     set_tag_rate_limit,

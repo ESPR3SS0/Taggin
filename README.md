@@ -67,12 +67,14 @@ writing Python. Assuming you saved either a structured text log or Parquet file:
 taggin by-tag logs/run.txt "TRAIN.*"
 taggin by-date logs/run.parquet --start "2025-01-01" --end "2025-01-05"
 taggin fuzzy logs/run.txt "redis timeout" --threshold 0.4 --limit 5
-taggin tags logs/run.txt                    # list all known tags
+taggin tags logs/run.txt                    # list every tag + its count
+taggin tags logs/run.txt --json-output      # machine-friendly tag counts
 taggin by-tag logs/run.txt "TRAIN.*" --json-output   # machine-friendly
 ```
 
-Each command prints matching entries in the same concise `[TAG] message` style,
-or JSON (when `--json-output` is provided) for downstream scripting.
+Each search command (`by-*`, `fuzzy`) prints matching entries in a concise
+`[TAG] message` style, while `taggin tags` now renders a frequency-sorted table.
+Provide `--json-output` to any command when you prefer machine-readable output.
 
 #### Tests
 
@@ -85,7 +87,9 @@ pytest
 
 #### Documentation
 
-This repo ships MkDocs docs (Home, Examples, API Reference). Preview locally:
+This repo ships MkDocs docs (Home, Examples, API Reference) using the Material
+theme. Install the doc dependencies (e.g., `pip install -e ".[dev]"` or
+`pip install mkdocs mkdocs-material`) and preview locally:
 
 ```bash
 mkdocs serve

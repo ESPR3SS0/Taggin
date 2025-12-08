@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -133,7 +133,7 @@ def test_save_parquet_if_pandas_available(tmp_path):
 def _make_record(msg: str, *, tag: str | None = None, level: int = logging.INFO):
     record = logging.LogRecord("test", level, __file__, 0, msg, args=(), exc_info=None)
     if tag:
-        setattr(record, "tag", tag)
+        record.tag = tag
     return record
 
 

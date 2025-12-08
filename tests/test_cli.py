@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from taggin.cli import by_date, by_tag, fuzzy, tags
 from taggin import LogStorage, StructuredLogEntry
+from taggin.cli import by_date, by_tag, fuzzy, tags
 
 
 @pytest.fixture()

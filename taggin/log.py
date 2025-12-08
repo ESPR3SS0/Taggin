@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Logging utilities with dynamic tag methods and searchable storage.
 
@@ -30,6 +28,9 @@ Advanced:
   - set_tag_rate_limit("TRAIN.BATCH", 0.25) limits a tag to once every 250ms.
   - Use `get_log_storage()` to save/search structured copies of every record.
 """
+from __future__ import annotations
+
+import contextlib
 import fnmatch
 import io
 import logging
@@ -37,11 +38,12 @@ import os
 import re
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable, Optional, Set, cast
+from typing import cast
 
 # -----------------------------
 # Progress-safe console support
@@ -62,7 +64,9 @@ except Exception:  # pragma: no cover
 
 class ProgressSafeStreamHandler(logging.StreamHandler):
     """Console handler that won't break tqdm/alive_progress bars."""
+
     def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - IO path
+        """Write a record while respecting tqdm/alive-progress output."""
         try:
             msg = self.format(record)
             if _tqdm_write is not None:
@@ -82,7 +86,7 @@ class ProgressSafeStreamHandler(logging.StreamHandler):
 # None  -> show ALL tags on console
 # set() -> hide ALL tags on console (default)
 # set([...patterns...]) -> show tags matching any glob pattern
-_ALLOWED_PATTERNS: Optional[Set[str]] = set()
+_ALLOWED_PATTERNS: dict[str, set[str] | None] = {"value": set()}
 _TAG_LEVEL: int = getattr(logging, os.getenv("TAGGIN_TAG_LEVEL", "INFO").upper(), logging.INFO)
 
 # Per-tag level overrides (e.g., {"QAT.FOLD": logging.DEBUG})
@@ -98,18 +102,19 @@ _TAG_STYLE: dict[str, TagStyle] = {}
 _TAG_LOCK = threading.RLock()
 
 # Structured storage singleton
-_STRUCTURED_STORAGE: Optional["LogStorage"] = None
+_STRUCTURED_STORAGE: list[LogStorage | None] = [None]
 
 
-def get_log_storage(create: bool = True) -> Optional["LogStorage"]:
+def get_log_storage(create: bool = True) -> LogStorage | None:
     """Return the shared LogStorage (created on demand by default)."""
-    global _STRUCTURED_STORAGE
-    if _STRUCTURED_STORAGE is None and create:
-        _STRUCTURED_STORAGE = LogStorage()
-    return _STRUCTURED_STORAGE
+    storage = _STRUCTURED_STORAGE[0]
+    if storage is None and create:
+        storage = LogStorage()
+        _STRUCTURED_STORAGE[0] = storage
+    return storage
 
 
-def _parse_tags(spec: Optional[str]) -> Optional[Set[str]]:
+def _parse_tags(spec: str | None) -> set[str] | None:
     # None/empty -> hide all by default
     if spec is None:
         return set()
@@ -131,21 +136,22 @@ def set_visible_tags(tags: Iterable[str] | None) -> None:
     - tags=["PRUNE", "QAT.*", "io.net"] → only those patterns
     Un-tagged (normal) log records are unaffected by this filter.
     """
-    global _ALLOWED_PATTERNS
     with _TAG_LOCK:
         if tags is None:
-            _ALLOWED_PATTERNS = set()
+            _ALLOWED_PATTERNS["value"] = set()
             return
         t = list(tags)
         if len(t) == 1 and t[0] in ("*", "ALL", "all"):
-            _ALLOWED_PATTERNS = None
+            _ALLOWED_PATTERNS["value"] = None
         else:
-            _ALLOWED_PATTERNS = {str(x) for x in t}
+            _ALLOWED_PATTERNS["value"] = {str(x) for x in t}
 
 
-def get_visible_tags() -> Optional[Set[str]]:
+def get_visible_tags() -> set[str] | None:
+    """Return currently visible tag patterns."""
     with _TAG_LOCK:
-        return None if _ALLOWED_PATTERNS is None else set(_ALLOWED_PATTERNS)
+        pats = _ALLOWED_PATTERNS["value"]
+        return None if pats is None else set(pats)
 
 
 def set_tag_level(tag: str, level: int | str) -> None:
@@ -181,12 +187,13 @@ def _rate_ok(tag: str) -> bool:
 
 class _TagFilter(logging.Filter):
     """Filter: passes untagged records; restricts tagged records by _ALLOWED_PATTERNS."""
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
+
+    def filter(self, record: logging.LogRecord) -> bool:
         tag = getattr(record, "tag", None)
         if tag is None:
             return True  # normal logs pass; rely on level for console
         with _TAG_LOCK:
-            pats = _ALLOWED_PATTERNS
+            pats = _ALLOWED_PATTERNS["value"]
         if pats is None:
             return True  # show all tags
         t = str(tag)
@@ -198,23 +205,26 @@ class _TagFilter(logging.Filter):
 # -----------------------------
 class ConsoleTagFirstFormatter(logging.Formatter):
     """
-    Console format:
+    Console layout for tagged records.
+
       [TAG] message                 (for tagged logs)
       [ERROR] message               (untagged ERROR/CRITICAL)
       [WARNING] message             (untagged WARNING)
       message                       (untagged INFO)
       [DEBUG] message               (untagged DEBUG)
     """
+
     def __init__(self, *, enable_color: bool = False):
         super().__init__()
         self._enable_color = enable_color
         if enable_color:
             try:  # pragma: no cover - import guard
-                import rich  # type: ignore
+                pass  # type: ignore
             except Exception:
                 self._enable_color = False
 
     def format(self, record: logging.LogRecord) -> str:  # pragma: no cover - formatting
+        """Return the styled console string for a log record."""
         msg = record.getMessage()
         tag = getattr(record, "tag", None)
         with _TAG_LOCK:
@@ -279,6 +289,7 @@ class ConsoleTagFirstFormatter(logging.Formatter):
 
 class TagStyle:
     """Stores optional color/emoji styling for tags."""
+
     __slots__ = ("color", "emoji")
 
     def __init__(self, color: str | None = None, emoji: str | None = None):
@@ -288,11 +299,14 @@ class TagStyle:
 
 class FileTagAwareFormatter(logging.Formatter):
     """
-    File format:
+    File format.
+
       2025-01-01 12:00:00 | INFO    | my.module | [TAG] message
       2025-01-01 12:00:00 | INFO    | my.module | message
     """
+
     def format(self, record: logging.LogRecord) -> str:  # pragma: no cover - formatting
+        """Render the base log record and append the tag/message combo."""
         # IMPORTANT: call super().format(record) so asctime and others are populated
         base = super().format(record)  # <- this sets asctime, formats the base fmt (no %(message)s in it)
         tag = getattr(record, "tag", None)
@@ -307,28 +321,34 @@ class FileTagAwareFormatter(logging.Formatter):
 # -----------------------------
 @dataclass(frozen=True)
 class StructuredLogEntry:
+    """Simple structure storing the normalized fields for each log entry."""
+
     timestamp: datetime
     level: str
     name: str
-    tag: Optional[str]
+    tag: str | None
     message: str
 
 
 class LogStorage:
     """Thread-safe in-memory index backed by helper save/search methods."""
+
     def __init__(self) -> None:
         self._records: list[StructuredLogEntry] = []
         self._lock = threading.RLock()
 
     def add(self, entry: StructuredLogEntry) -> None:
+        """Persist a record into the in-memory store."""
         with self._lock:
             self._records.append(entry)
 
     def iter_records(self) -> list[StructuredLogEntry]:
+        """Return a shallow copy of all stored records (thread-safe)."""
         with self._lock:
             return list(self._records)
 
     def clear(self) -> None:
+        """Remove all stored records."""
         with self._lock:
             self._records.clear()
 
@@ -426,11 +446,13 @@ class LogStorage:
 
 class StructuredLogHandler(logging.Handler):
     """Handler that captures log records in a LogStorage index."""
+
     def __init__(self, storage: LogStorage):
         super().__init__(level=logging.NOTSET)
         self._storage = storage
 
     def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - thin wrapper
+        """Translate the log record into StructuredLogEntry rows."""
         msg = record.getMessage()
         entry = StructuredLogEntry(
             timestamp=datetime.fromtimestamp(record.created),
@@ -442,7 +464,7 @@ class StructuredLogHandler(logging.Handler):
         self._storage.add(entry)
 
 
-def _ensure_structured_logging(logger: logging.Logger) -> Optional[LogStorage]:
+def _ensure_structured_logging(logger: logging.Logger) -> LogStorage | None:
     storage = get_log_storage(create=True)
     if storage is None:
         return None
@@ -457,7 +479,7 @@ def _ensure_structured_logging(logger: logging.Logger) -> Optional[LogStorage]:
 # Tagged logger implementation (with chaining via proxy)
 # -----------------------------
 def _emit_tag_log(logger: logging.Logger, tag: str, msg, *args, **kwargs) -> None:
-    """Internal helper shared by TaggedLogger and shim."""
+    """Emit a tagged log after validating visibility, rate limits, and storage."""
     # Rate limiting
     if not _rate_ok(tag):
         return
@@ -477,6 +499,7 @@ class _TagProxy:
         log.io.net("msg")    -> tag="io.net"
         log.QAT("msg")       -> tag="QAT"
     """
+
     __slots__ = ("_logger", "_parts")
 
     def __init__(self, logger: logging.Logger, parts: list[str]):
@@ -486,7 +509,7 @@ class _TagProxy:
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)
-        return _TagProxy(self._logger, self._parts + [name])
+        return _TagProxy(self._logger, [*self._parts, name])
 
     def __call__(self, msg, *args, **kwargs):
         tag = ".".join(self._parts)
@@ -495,7 +518,9 @@ class _TagProxy:
 
 class TaggedLogger(logging.Logger):
     """Logger that treats unknown attributes as tag proxies (supports chaining)."""
+
     def __getattr__(self, name: str):  # pragma: no cover - dynamic method
+        """Return a chained tag proxy for attribute access."""
         if name.startswith("_"):
             raise AttributeError(name)
         return _TagProxy(self, [name])
@@ -510,7 +535,7 @@ def setup_logger(
     console_level: str = "INFO",
     file_level: str = "DEBUG",
     enable_color: bool = False,
-) -> "TaggedLogger":
+) -> TaggedLogger:
     """Create a root logger with file + console, plus dynamic tag support.
 
     - File handler: writes records ≥ file_level to <log_dir>/<log_name>.
@@ -519,10 +544,8 @@ def setup_logger(
       tagged messages by the tag allowlist (env TAGGIN_LOG_TAGS or set_visible_tags).
     """
     # install our dynamic-logger class for all subsequently created loggers
-    try:
+    with contextlib.suppress(Exception):
         logging.setLoggerClass(TaggedLogger)
-    except Exception:
-        pass
 
     # ensure even existing plain Logger instances support tag methods
     _install_tag_shim()
@@ -578,10 +601,8 @@ def setup_logger(
 # Ensure modules importing this file get the dynamic logger behavior even if
 # they never call setup_logger(). We avoid adding handlers automatically to not
 # surprise libraries; setup_logger() remains the entry point for handlers.
-try:  # pragma: no cover - safe best-effort
+with contextlib.suppress(Exception):  # pragma: no cover - safe best-effort
     logging.setLoggerClass(TaggedLogger)
-except Exception:
-    pass
 
 
 def _install_tag_shim():  # pragma: no cover - straightforward shim

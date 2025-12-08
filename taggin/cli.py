@@ -8,18 +8,19 @@ Usage examples:
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
-from rich.console import Console
-from rich.table import Table
 
 import arrow
 from cyclopts import App
+from rich.console import Console
+from rich.table import Table
 
 from .log import LogStorage, StructuredLogEntry
 
 app = App(name="taggin")
 console = Console()
+EXPECTED_TEXT_PARTS = 4
 
 
 def _format_entry(entry: StructuredLogEntry) -> str:
@@ -44,12 +45,12 @@ def _load_from_text(path: Path) -> Iterable[StructuredLogEntry]:
     if not path.exists():
         raise FileNotFoundError(path)
     with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
+        for raw_line in fh:
+            line = raw_line.strip()
             if not line:
                 continue
             parts = line.split(" | ", 3)
-            if len(parts) != 4:
+            if len(parts) != EXPECTED_TEXT_PARTS:
                 continue
             ts_str, level, name, rest = parts
             try:
@@ -57,7 +58,7 @@ def _load_from_text(path: Path) -> Iterable[StructuredLogEntry]:
             except Exception:
                 # Skip malformed timestamps instead of aborting the entire load
                 continue
-            tag: Optional[str] = None
+            tag: str | None = None
             message = rest
             if rest.startswith("[") and "] " in rest:
                 closing = rest.find("]")
@@ -101,7 +102,7 @@ def _load_storage(path: Path) -> LogStorage:
     return storage
 
 
-def _parse_datetime(value: Optional[str]):
+def _parse_datetime(value: str | None):
     if value is None:
         return None
     value = value.strip()
@@ -220,6 +221,7 @@ def tags(path: Path, json_output: bool = False) -> None:
     console.print(table)
 
 def main() -> None:
+    """Entrypoint used by `python -m taggin.cli` and the console script."""
     app()
 
 

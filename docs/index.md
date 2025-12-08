@@ -53,11 +53,13 @@ Set `enable_color=False` (default) to keep plain console output.
 taggin by-tag logs/run.txt "TRAIN.*"
 taggin by-date logs/run.parquet --start "2025-01-01" --end "2025-01-05"
 taggin fuzzy logs/run.txt "redis timeout" --threshold 0.4 --limit 5 --json-output
-taggin tags logs/run.txt
+taggin tags logs/run.txt                    # show each tag with its count
+taggin tags logs/run.txt --json-output      # emit the same counts for tooling
 ```
 
-Each command prints human-readable text or JSON (`--json-output`) for downstream
-automation.
+Each search command prints human-readable text or JSON (`--json-output`) for
+downstream automation, while `taggin tags` displays a frequency-sorted summary
+so you can see the busiest categories at a glance.
 
 ## Installation & Development
 
@@ -66,3 +68,6 @@ pip install taggin
 pytest  # run the tests
 mkdocs serve  # preview docs
 ```
+
+The documentation site uses the Material theme, so make sure `mkdocs-material`
+is installed (e.g., `pip install -e ".[dev]"` or `pip install mkdocs mkdocs-material`) before running `mkdocs serve`.

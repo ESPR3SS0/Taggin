@@ -67,6 +67,9 @@ taggin by-date logs/run.txt --start "2025-01-05T10:00:00" --end "2025-01-05T11:0
 # Fuzzy search for "timeout" and export JSON
 taggin fuzzy logs/run.txt timeout --threshold 0.3 --json-output > timeout.json
 
-# List every tag contained in the file
+# List every tag + its count
+taggin tags logs/run.txt
+
+# Emit the same counts as JSON for scripting
 taggin tags logs/run.txt --json-output
 ```
