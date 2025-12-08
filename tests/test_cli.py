@@ -67,3 +67,33 @@ def test_cli_list_tags(structured_log, capsys):
     tags(path, json_output=True)
     json_data = json.loads(capsys.readouterr().out)
     assert json_data == ["IO.net", "TRAIN.END", "TRAIN.START"]
+
+
+def test_cli_skips_malformed_text_lines(tmp_path, capsys):
+    path = Path(tmp_path) / "bad.log"
+    path.write_text(
+        "\n".join(
+            [
+                "not even close",  # missing separators
+                "2025-01-01T12:00:00 | INFO | demo | [TRAIN.START] ok",  # valid
+                "invalid-timestamp | INFO | demo | [TRAIN.END] bad",  # invalid ts
+            ]
+        )
+    )
+
+    by_tag(path, "TRAIN.*")
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out == ["2025-01-01T12:00:00 | INFO    | demo | [TRAIN.START] ok"]
+
+
+def test_cli_ignores_blank_date_filters(structured_log, capsys):
+    path, entries = structured_log
+    by_date(path, start="   ", end=None)
+    out = capsys.readouterr().out.strip().splitlines()
+    assert len(out) == len(entries)
+
+
+def test_cli_invalid_date_string_raises(structured_log):
+    path, _ = structured_log
+    with pytest.raises(ValueError):
+        by_date(path, start="not-a-date")
