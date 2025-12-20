@@ -36,6 +36,7 @@ import io
 import logging
 import os
 import re
+import sys
 import threading
 import time
 from collections.abc import Iterable
@@ -43,7 +44,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import cast
+from typing import IO, cast
 
 # -----------------------------
 # Progress-safe console support
@@ -56,28 +57,87 @@ except Exception:  # pragma: no cover
     _tqdm_write = None
 
 _alive_write = None
+_ALIVE_WRITE_ACCEPTS_STREAM = False
 try:  # pragma: no cover
     from alive_progress.core.progress import print_over as _alive_write  # type: ignore
 except Exception:  # pragma: no cover
     _alive_write = None
+else:  # pragma: no cover
+    try:
+        from inspect import signature
+
+        _ALIVE_WRITE_ACCEPTS_STREAM = "file" in signature(_alive_write).parameters
+    except Exception:
+        _ALIVE_WRITE_ACCEPTS_STREAM = False
+
+try:  # pragma: no cover
+    from rich.file_proxy import FileProxy as _RICH_FILE_PROXY  # type: ignore
+except Exception:  # pragma: no cover
+    _RICH_FILE_PROXY = None
 
 
 class ProgressSafeStreamHandler(logging.StreamHandler):
-    """Console handler that won't break tqdm/alive_progress bars."""
+    """Console handler that won't break tqdm/alive_progress/Rich progress bars."""
+
+    def __init__(self, stream: IO[str] | None = None):
+        super().__init__(stream)
+        self._uses_default_stream = stream is None or stream is sys.stderr
+
+    def setStream(self, stream):  # type: ignore[override]
+        """Track whether the handler is still bound to the default stderr stream."""
+        result = super().setStream(stream)
+        target = stream if stream is not None else sys.stderr
+        self._uses_default_stream = target is sys.stderr
+        return result
 
     def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - IO path
         """Write a record while respecting tqdm/alive-progress output."""
         try:
             msg = self.format(record)
+            self._sync_rich_stream()
             if _tqdm_write is not None:
                 _tqdm_write(msg, file=self.stream)
-            elif _alive_write is not None:
-                _alive_write(msg, file=self.stream)
+            elif _alive_write is not None and _write_with_alive(msg, self.stream):
+                pass
             else:
                 self.stream.write(msg + ("" if msg.endswith("\n") else "\n"))
                 self.flush()
         except Exception:
             self.handleError(record)
+
+    def _sync_rich_stream(self) -> None:
+        """If Rich redirected stderr, mirror the handler stream to the proxy."""
+        if not self._uses_default_stream or _RICH_FILE_PROXY is None:
+            return
+        current_stderr = sys.stderr
+        handler_stream = self.stream
+        if isinstance(current_stderr, _RICH_FILE_PROXY):
+            if handler_stream is not current_stderr:
+                self.setStream(current_stderr)
+        elif isinstance(handler_stream, _RICH_FILE_PROXY):
+            # Rich live rendering has finished; switch back to the latest stderr.
+            self.setStream(current_stderr)
+
+
+def _write_with_alive(message: str, stream: IO[str]) -> bool:
+    """Return True if alive_progress handled the write successfully."""
+    if _alive_write is None:
+        return False
+    try:
+        if _ALIVE_WRITE_ACCEPTS_STREAM:
+            _alive_write(message, file=stream)
+        else:
+            _alive_write(message)
+        return True
+    except TypeError:
+        # Some releases lack the `file` parameter; retry without it.
+        try:
+            _alive_write(message)
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
 
 
 # -----------------------------
@@ -97,6 +157,9 @@ _RATE_LIMITS: dict[str, tuple[float, float]] = {}
 
 # Per-tag styling: tag -> TagStyle
 _TAG_STYLE: dict[str, TagStyle] = {}
+
+# Console-level threshold for untagged records (so tagged logs can bypass handler level).
+_CONSOLE_LEVEL_THRESHOLD = logging.INFO
 
 # Thread-safety for shared state
 _TAG_LOCK = threading.RLock()
@@ -154,6 +217,12 @@ def get_visible_tags() -> set[str] | None:
         return None if pats is None else set(pats)
 
 
+def _set_console_level_threshold(level: int) -> None:
+    with _TAG_LOCK:
+        global _CONSOLE_LEVEL_THRESHOLD
+        _CONSOLE_LEVEL_THRESHOLD = int(level)
+
+
 def set_tag_level(tag: str, level: int | str) -> None:
     """Override the log level for a specific tag (exact match)."""
     lvl = getattr(logging, str(level).upper(), level)
@@ -190,10 +259,11 @@ class _TagFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         tag = getattr(record, "tag", None)
-        if tag is None:
-            return True  # normal logs pass; rely on level for console
         with _TAG_LOCK:
             pats = _ALLOWED_PATTERNS["value"]
+            min_level = _CONSOLE_LEVEL_THRESHOLD
+        if tag is None:
+            return record.levelno >= min_level  # mimic handler level for untagged logs
         if pats is None:
             return True  # show all tags
         t = str(tag)
@@ -556,6 +626,7 @@ def setup_logger(
     # convert strings to logging levels
     c_lvl = getattr(logging, console_level.upper(), logging.INFO)
     f_lvl = getattr(logging, file_level.upper(), logging.DEBUG)
+    _set_console_level_threshold(c_lvl)
 
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     log_path = Path(log_dir) / log_name
@@ -579,7 +650,7 @@ def setup_logger(
 
         # ---- console handler (progress-safe, tag-first) ----
         ch = ProgressSafeStreamHandler()
-        ch.setLevel(c_lvl)
+        ch.setLevel(logging.DEBUG)
         ch.setFormatter(ConsoleTagFirstFormatter(enable_color=enable_color))
         ch.addFilter(_TagFilter())
         logger.addHandler(ch)

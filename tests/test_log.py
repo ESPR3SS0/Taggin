@@ -1,5 +1,7 @@
+import io
 import logging
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +11,7 @@ from taggin import (
     StructuredLogEntry,
     set_tag_style,
 )
+from taggin import log as taggin_log
 
 
 def make_entry(offset_seconds: int, tag: str | None, message: str) -> StructuredLogEntry:
@@ -150,3 +153,264 @@ def test_console_formatter_color_mode_outputs_ansi():
     record = _make_record("payload", tag="TRAIN.START")
     rendered = formatter.format(record)
     assert "\x1b[" in rendered or "[TRAIN.START]" in rendered
+
+
+class _MemoryStream:
+    def __init__(self):
+        self.writes: list[str] = []
+        self.flush_count = 0
+
+    def write(self, msg: str) -> None:
+        self.writes.append(msg)
+
+    def flush(self) -> None:
+        self.flush_count += 1
+
+
+def _build_progress_handler(stream: _MemoryStream) -> taggin_log.ProgressSafeStreamHandler:
+    handler = taggin_log.ProgressSafeStreamHandler()
+    handler.setStream(stream)  # type: ignore[arg-type]
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    return handler
+
+
+def _make_simple_record(message: str = "payload") -> logging.LogRecord:
+    return logging.LogRecord("test", logging.INFO, __file__, 0, message, args=(), exc_info=None)
+
+
+def test_progress_handler_plain_stream(monkeypatch):
+    stream = _MemoryStream()
+    handler = _build_progress_handler(stream)
+    monkeypatch.setattr(taggin_log, "_tqdm_write", None)
+    monkeypatch.setattr(taggin_log, "_alive_write", None)
+    handler.emit(_make_simple_record("hello"))
+    assert stream.writes == ["hello\n"]
+    assert stream.flush_count == 1
+
+
+def test_progress_handler_yaspin_like_stream(monkeypatch):
+    class _YaspinStream:
+        def __init__(self):
+            self.output = []
+            self.flush_count = 0
+
+        def write(self, msg: str):
+            self.output.append(msg.replace("\r", ""))
+
+        def flush(self):
+            self.flush_count += 1
+
+    stream = _YaspinStream()
+    handler = _build_progress_handler(stream)  # type: ignore[arg-type]
+    monkeypatch.setattr(taggin_log, "_tqdm_write", None)
+    monkeypatch.setattr(taggin_log, "_alive_write", None)
+    handler.emit(_make_simple_record("tick\rspin"))
+    assert "tickspin\n" in stream.output or "tickspin" in stream.output[0]
+    assert stream.flush_count == 1
+
+
+def test_progress_handler_prefers_tqdm(monkeypatch):
+    calls: list[SimpleNamespace] = []
+
+    def fake_tqdm_write(message: str, *, file):
+        calls.append(SimpleNamespace(message=message, file=file))
+
+    stream = _MemoryStream()
+    handler = _build_progress_handler(stream)
+    monkeypatch.setattr(taggin_log, "_tqdm_write", fake_tqdm_write)
+    monkeypatch.setattr(taggin_log, "_alive_write", None)
+    handler.emit(_make_simple_record("via tqdm"))
+
+    assert calls and calls[0].message == "via tqdm"
+    assert calls[0].file is stream
+    assert stream.writes == []
+
+
+def test_progress_handler_alive_with_stream_arg(monkeypatch):
+    calls = []
+
+    def fake_alive(message: str, *, file):
+        calls.append((message, file))
+
+    stream = _MemoryStream()
+    handler = _build_progress_handler(stream)
+    monkeypatch.setattr(taggin_log, "_tqdm_write", None)
+    monkeypatch.setattr(taggin_log, "_alive_write", fake_alive)
+    monkeypatch.setattr(taggin_log, "_ALIVE_WRITE_ACCEPTS_STREAM", True)
+
+    handler.emit(_make_simple_record("alive stream"))
+    assert calls == [("alive stream", stream)]
+    assert stream.writes == []
+
+
+def test_progress_handler_alive_without_stream_arg(monkeypatch):
+    calls = []
+
+    def fake_alive(message: str):
+        calls.append(message)
+
+    stream = _MemoryStream()
+    handler = _build_progress_handler(stream)
+    monkeypatch.setattr(taggin_log, "_tqdm_write", None)
+    monkeypatch.setattr(taggin_log, "_alive_write", fake_alive)
+    monkeypatch.setattr(taggin_log, "_ALIVE_WRITE_ACCEPTS_STREAM", False)
+
+    handler.emit(_make_simple_record("alive simple"))
+    assert calls == ["alive simple"]
+    assert stream.writes == []
+
+
+def test_progress_handler_alive_typeerror_fallback(monkeypatch):
+    calls = []
+
+    def fake_alive(message: str, **kwargs):
+        calls.append((message, kwargs))
+        if "file" in kwargs:
+            raise TypeError("no file parameter")
+
+    stream = _MemoryStream()
+    handler = _build_progress_handler(stream)
+    monkeypatch.setattr(taggin_log, "_tqdm_write", None)
+    monkeypatch.setattr(taggin_log, "_alive_write", fake_alive)
+    monkeypatch.setattr(taggin_log, "_ALIVE_WRITE_ACCEPTS_STREAM", True)
+
+    handler.emit(_make_simple_record("alive fallback"))
+    assert calls == [("alive fallback", {"file": stream}), ("alive fallback", {})]
+    assert stream.writes == []
+
+
+def test_progress_handler_alive_error_fallback_to_stream(monkeypatch):
+    class Boom(Exception):
+        pass
+
+    def fake_alive(message: str, **kwargs):
+        raise Boom("oops")
+
+    stream = _MemoryStream()
+    handler = _build_progress_handler(stream)
+    monkeypatch.setattr(taggin_log, "_tqdm_write", None)
+    monkeypatch.setattr(taggin_log, "_alive_write", fake_alive)
+    monkeypatch.setattr(taggin_log, "_ALIVE_WRITE_ACCEPTS_STREAM", True)
+
+    handler.emit(_make_simple_record("alive boom"))
+    assert stream.writes == ["alive boom\n"]
+
+
+def test_progress_handler_switches_to_rich_proxy(monkeypatch):
+    class _ProxyStream:
+        def __init__(self):
+            self.output: list[str] = []
+            self.flush_count = 0
+
+        def write(self, msg: str):
+            self.output.append(msg)
+
+        def flush(self):
+            self.flush_count += 1
+
+    base_stream = _MemoryStream()
+    monkeypatch.setattr(taggin_log.sys, "stderr", base_stream)
+    handler = taggin_log.ProgressSafeStreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    monkeypatch.setattr(taggin_log, "_RICH_FILE_PROXY", _ProxyStream)
+
+    proxy = _ProxyStream()
+    taggin_log.sys.stderr = proxy
+
+    handler.emit(_make_simple_record("rich progress"))
+
+    assert handler.stream is proxy
+    assert proxy.output == ["rich progress\n"]
+    assert proxy.flush_count == 1
+
+
+def test_progress_handler_returns_from_rich_proxy(monkeypatch):
+    class _ProxyStream:
+        def __init__(self):
+            self.output: list[str] = []
+
+        def write(self, msg: str):
+            self.output.append(msg)
+
+        def flush(self):
+            pass
+
+    initial_stream = _MemoryStream()
+    monkeypatch.setattr(taggin_log.sys, "stderr", initial_stream)
+    handler = taggin_log.ProgressSafeStreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    monkeypatch.setattr(taggin_log, "_RICH_FILE_PROXY", _ProxyStream)
+
+    proxy = _ProxyStream()
+    taggin_log.sys.stderr = proxy
+    handler.emit(_make_simple_record("proxy one"))
+    assert handler.stream is proxy
+    assert proxy.output == ["proxy one\n"]
+
+    restored = _MemoryStream()
+    taggin_log.sys.stderr = restored
+    handler.emit(_make_simple_record("back to normal"))
+    assert handler.stream is restored
+    assert restored.writes == ["back to normal\n"]
+
+
+def test_progress_handler_with_real_rich_progress(monkeypatch):
+    from rich.console import Console
+    from rich.progress import Progress
+
+    if taggin_log._RICH_FILE_PROXY is None:
+        pytest.skip("Rich FileProxy unavailable")
+
+    console_buffer = io.StringIO()
+    console = Console(file=console_buffer, force_terminal=True, force_interactive=True)
+    base_stream = _MemoryStream()
+    monkeypatch.setattr(taggin_log.sys, "stderr", base_stream)
+
+    handler = taggin_log.ProgressSafeStreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+
+    with Progress(console=console, auto_refresh=False, transient=True) as progress:
+        handler.emit(_make_simple_record("rich live"))
+        assert isinstance(handler.stream, taggin_log._RICH_FILE_PROXY)
+        progress.refresh()
+
+    output = console_buffer.getvalue()
+    assert "rich live" in output
+
+
+def test_tagged_logs_visible_with_high_console_level(tmp_path, monkeypatch):
+    prev_visible = taggin_log.get_visible_tags()
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    for handler in original_handlers:
+        root.removeHandler(handler)
+
+    buffer = io.StringIO()
+    monkeypatch.setattr(taggin_log.sys, "stderr", buffer)
+
+    logger = taggin_log.setup_logger(log_dir=tmp_path, console_level="WARNING")
+    taggin_log.set_visible_tags(["TRAIN.*"])
+
+    buffer.truncate(0)
+    buffer.seek(0)
+    logger.TRAIN.START("visible info")
+    assert "visible info" in buffer.getvalue()
+
+    buffer.truncate(0)
+    buffer.seek(0)
+    logger.info("untagged info")
+    assert buffer.getvalue() == ""
+
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+        handler.close()
+    for handler in original_handlers:
+        root.addHandler(handler)
+
+    if prev_visible is None:
+        taggin_log.set_visible_tags(["*"])
+    elif len(prev_visible) == 0:
+        taggin_log.set_visible_tags(None)
+    else:
+        taggin_log.set_visible_tags(prev_visible)
+    taggin_log._set_console_level_threshold(logging.INFO)
