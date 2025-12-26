@@ -7,6 +7,15 @@ attribute access as dynamic tags (`log.TRAIN.BATCH("...")`). Tags can be
 filtered via glob patterns, assigned custom log levels, rate limited, and every
 log is mirrored into a structured store that can be searched or exported.
 
+```mermaid
+flowchart LR
+    A[Application code] -->|log.info / log.TAG.*| B(Progress-safe console)
+    A --> C(File handler: logs/run.log)
+    A --> D(Structured storage)
+    D --> E[save_text / save_parquet]
+    E --> F[taggin CLI searches]
+```
+
 ### Installation
 
 Install via pip (or pixi/uv) with:
@@ -58,6 +67,17 @@ so they remain queryable even if the original message contains its own time or
 date. This makes ad-hoc debugging easy whether you prefer grepping the text
 artifact or using a DataFrame/Parquet workflow.
 
+#### Runtime configuration cheatsheet
+
+- `TAGGIN_LOG_TAGS="*"` – show all tags on console; use comma/space-separated
+  globs like `TAGGIN_LOG_TAGS="TRAIN.* io.*"` to focus noise.
+- `TAGGIN_TAG_LEVEL="DEBUG"` – raise/lower the default level for tagged calls.
+- `set_visible_tags`, `set_tag_rate_limit`, `set_tag_level`, `set_tag_style` –
+  runtime APIs for interactive notebooks or long-running services.
+
+Tagged records always reach the log file and structured store, even if they are
+hidden on the console by the tag filter.
+
 #### CLI search utility
 
 A small `cyclopts`-powered CLI is available for exploring saved logs without
@@ -75,6 +95,23 @@ taggin by-tag logs/run.txt "TRAIN.*" --json-output   # machine-friendly
 Each search command (`by-*`, `fuzzy`) prints matching entries in a concise
 `[TAG] message` style, while `taggin tags` now renders a frequency-sorted table.
 Provide `--json-output` to any command when you prefer machine-readable output.
+
+All JSON responses share the same shape:
+
+```json
+[
+  {
+    "timestamp": "2025-01-05T10:00:01.234567",
+    "level": "INFO",
+    "name": "my.module",
+    "tag": "TRAIN.EPOCH",
+    "message": "epoch=1 acc=0.92"
+  }
+]
+```
+
+`taggin tags --json-output` instead returns `[{"tag": "...", "count": 12}]`
+pairs for scripting (e.g., feeding dashboards).
 
 #### Tests
 
