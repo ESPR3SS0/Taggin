@@ -53,6 +53,23 @@ log.METRIC.BATCH("loss=%f", 0.2)             # skipped (rate limited)
 log.ALERT.CRIT("model diverged")
 ```
 
+## Progress-safe logging inside loops
+
+`ProgressSafeStreamHandler` keeps tqdm/alive-progress bars intact by writing
+through their helper APIs when available:
+
+```python
+from taggin import setup_logger
+from tqdm import trange
+
+log = setup_logger(enable_color=False)
+
+for step in trange(5):
+    log.METRIC.BATCH("step=%s", step)
+```
+
+You'll see both the progress bar and your tagged messages without broken lines.
+
 ## CLI Recipes
 
 Once you have a structured log text file or Parquet dump, slice it with the CLI:
@@ -72,4 +89,25 @@ taggin tags logs/run.txt
 
 # Emit the same counts as JSON for scripting
 taggin tags logs/run.txt --json-output
+
+# Combine searches with jq for dashboards
+taggin by-tag logs/run.txt "TRAIN.*" --json-output | jq '.[0:3]'
+
+# Use parquet files interchangeably
+taggin fuzzy logs/run.parquet "timeout" --threshold 0.3 --limit 3
 ```
+
+### Converting between formats
+
+Move between text and Parquet with the same `LogStorage` helper:
+
+```python
+from taggin import get_log_storage
+
+storage = get_log_storage()
+storage.save_text("logs/demo_structured.log")
+storage.save_parquet("logs/demo_structured.parquet")
+```
+
+You can then point the CLI at either file; the `taggin` commands autodetect the
+format from the file suffix.
